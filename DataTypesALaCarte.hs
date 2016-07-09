@@ -236,3 +236,43 @@ instance (Run f, Run g) => Run (f :+: g) where
 
 run :: Run f => Term f a -> Mem -> (a, Mem)
 run = foldTerm (,) runAlgebra
+
+-- 7 Applications
+-- Consider the following two data types, describing two classes of IO
+-- operation from the Haskell Prelude:
+data Teletype a
+  = GetChar (Char -> a)
+  | PutChar Char a
+  deriving Functor
+
+data FileSystem a
+  = ReadFile FilePath (String -> a)
+  | WriteFile FilePath String a
+  deriving Functor
+-- We define a function exec that takes pure terms to their corresponding
+-- impure programs:
+exec :: Exec f => Term f a -> IO a
+exec = foldTerm return execAlgebra
+
+-- The execAlgebra merely gives the correspondence between our constructors
+-- and the Prelude.
+class Functor f => Exec f where
+  execAlgebra :: f (IO a) -> IO a
+
+instance Exec Teletype where
+  execAlgebra (GetChar f) = Prelude.getChar >>= f
+  execAlgebra (PutChar c io) = Prelude.putChar c >> io
+
+instance Exec FileSystem where
+  execAlgebra (ReadFile filepath f) = Prelude.readFile filepath >>= f
+  execAlgebra (WriteFile filepath s io) = Prelude.writeFile filepath s >> io
+
+-- smart constructors
+-- TODO
+{-
+cat :: FilePath -> Term (Teletype :+: FileSystem) ()
+cat filepath = do
+  contents <- readFile filepath
+  mapM putChar contents
+  return ()
+-}
