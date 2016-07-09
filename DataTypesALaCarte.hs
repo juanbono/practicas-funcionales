@@ -2,7 +2,10 @@
 {-# LANGUAGE FlexibleInstances     #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeOperators         #-}
+{-# LANGUAGE DeriveFunctor         #-}
+
 module DataTypesALaCarte where
+
 {-
 The Expression Problem:
   define a data type by cases, where one can add new cases to the data type
@@ -152,22 +155,84 @@ distr t = do
 
 -- 6- Monads for free
 
-data Term f a =
-  Pure a
-  | Impure (f (Term f a))
+data Term f a = Pure a
+              | Impure (f (Term f a))
 
 instance Functor f => Functor (Term f) where
   fmap f (Pure x) = Pure (f x)
   fmap f (Impure t) = Impure $ (f <$>) <$> t
 
-instance Applicative f => Applicative (Term f) where
+instance Functor f => Applicative (Term f) where
   pure = Pure
-  (Pure f) <*> a = f <$> a
-  (Impure f) <*> (Pure a) = Impure $ _
---  (Impure f) <*> (Impure x) = Impure (fmap (fmap f) x)
-{-
-instance Applicative f => Monad (Term f) where
+  Pure f <*> a = f <$> a
+  Impure f <*> a  = Impure $ (<*> a) <$> f
+
+instance Functor f => Monad (Term f) where
   return = pure
   (Pure x) >>= f = f x
   (Impure t) >>= f = Impure (fmap (>>= f) t)
--}
+
+data Zero a -- Term Zero is the Identity Monad
+data One a = One -- Term One is the Maybe Monad
+data Const e a = Const e -- Term (Const e) is the Error Monad
+
+-- In this specific instance, the Term data type is a higher-order functor
+-- that maps a functor f to the monad Term f.
+-- Computing the Coproduct of two free monads reduces to computing the
+-- Coproduct of their underlying functors.
+-- Now we can use the Term data type to represent a language of stateful
+-- computations.
+
+-- We will consider simple calculators that are equipped with three buttons for
+-- modifying the memory:
+-- 1- Recall: The memory can be accessed using the recall button. Pressing the
+--    recall button returns the current number stored in memory.
+-- 2- Increment: You can add an integer to the number currently stored in the
+--    memory using the M+ button. To avoid confusion with the coproduct, we will
+--    refer to this button as Incr.
+-- 3- Clear: Finally, the memory can be reset to zero using a Clear button.
+
+data Incr t = Incr Int t deriving Functor
+data Recall t = Recall (Int -> t) deriving Functor
+
+-- smart constructors
+injectTerm :: (g :<: f) => g (Term f a) -> Term f a
+injectTerm = Impure . inj
+
+incr :: (Incr :<: f) => Int -> Term f ()
+incr i = injectTerm (Incr i (Pure ()))
+
+recall :: (Recall :<: f) => Term f Int
+recall = injectTerm (Recall Pure)
+
+-- increments the number stored in memory and returns its previous value
+tick :: Term (Recall :+: Incr) Int
+tick = do
+  y <- recall
+  incr 1
+  return y
+
+-- In order to write functions over terms, we define the following fold:
+foldTerm :: Functor f => (a -> b) -> (f b -> b) -> Term f a -> b
+foldTerm p _ (Pure x) = p x
+foldTerm p imp (Impure t) = imp (foldTerm p imp <$> t)
+-- The first arg (p) is applied to pure values and imp for impure values.
+
+-- Represents the contents of a memory cell.
+newtype Mem = Mem Int
+
+class Functor f => Run f where
+  runAlgebra :: f (Mem -> (a, Mem)) -> (Mem -> (a, Mem))
+
+instance Run Incr where
+  runAlgebra (Incr k r) (Mem i) = r (Mem (i + k))
+
+instance Run Recall where
+  runAlgebra (Recall r) (Mem i) = r i (Mem i)
+
+instance (Run f, Run g) => Run (f :+: g) where
+  runAlgebra (Inl r) = runAlgebra r
+  runAlgebra (Inr r) = runAlgebra r
+
+run :: Run f => Term f a -> Mem -> (a, Mem)
+run = foldTerm (,) runAlgebra
