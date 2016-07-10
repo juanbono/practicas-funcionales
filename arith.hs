@@ -22,4 +22,3 @@ instance Show Term where
       ifPart = "if (" ++ show t1 ++ ")"
       thenPart = " then (" ++ show t2 ++ ")"
       elsePart = " else (" ++ show t3 ++ ")"
-
