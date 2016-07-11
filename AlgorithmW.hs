@@ -139,6 +139,59 @@ varBind u t | t == TVar u          = return nullSubst
             | u `Set.member` ftv t = throwError $ "occur check fails: " ++ u ++ " vs . " ++ show t
             | otherwise            = return (Map.singleton u t)
 
+-- Main type inference function
+--Types for literals are inferred by the function tiLit
+tiLit :: TypeEnv -> Lit -> TI (Subst, Type)
+tiLit _ (LInt _)  = return (nullSubst, TInt)
+tiLit _ (LBool _) = return (nullSubst, TBool)
+
+-- The function ti infers the types for expressions. The type environment
+-- contain bindings for all free variables of the expressions. The returned
+-- substitution records the type constraints imposed on type variables by the
+-- expression, and the returned type is the type of the expression.
+ti :: TypeEnv -> Exp -> TI (Subst, Type)
+ti (TypeEnv env) (EVar n) = case Map.lookup n env of
+                                 Nothing -> throwError $ "unbound variable: " ++ n
+                                 Just sigma -> do t <- instantiate sigma
+                                                  return (nullSubst, t)
+ti env (ELit l) = tiLit env l
+ti env (EAbs n e) = do
+  tv <- newTyVar "a"
+  let TypeEnv env' = remove env n
+      env'' = TypeEnv (env' `Map.union` Map.singleton n (Scheme [] tv))
+  (s1, t1) <- ti env'' e
+  return (s1, TFun (apply s1 tv) t1)
+ti env (EApp e1 e2) = do
+  tv       <- newTyVar "a"
+  (s1, t1) <- ti env e1
+  (s2, t2) <- ti (apply s1 env) e2
+  s3       <- mgu (apply s2 t1) (TFun t2 tv)
+  return (s3 `composeSubst` s2 `composeSubst` s1, apply s3 tv)
+ti env (ELet x e1 e2) = do
+  (s1, t1) <- ti env e1
+  let TypeEnv env' = remove env x
+      t' = generalize (apply s1 env) t1
+      env'' = TypeEnv (Map.insert x t' env')
+  (s2, t2) <- ti (apply s1 env'') e2
+  return (s1 `composeSubst` s2, t2)
+
+typeInference :: Map.Map String Scheme -> Exp -> TI Type
+typeInference env e = do
+  (s, t) <- ti (TypeEnv env) e
+  return (apply s t)
+
+-- Tests
+test :: Exp -> IO ()
+test e = do
+  (res, _) <- runTI (typeInference Map.empty e)
+  case res of
+    Left err -> putStrLn $ "error: " ++ err
+    Right t  -> putStrLn $ show e ++ " : " ++ show t
+
+-- sample expressions
+e0 :: Exp
+e0 = ELet "id" (EAbs "x" (EVar "x")) (EVar "id")
+
 -- Pretty-printing functions for the abstract syntax.
 instance Show Type where
   showsPrec _ x = shows (prType x)
