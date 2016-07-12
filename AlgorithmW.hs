@@ -7,11 +7,11 @@ import Control.Monad.Reader
 import Control.Monad.State
 import qualified Text.PrettyPrint as PP
 import Data.Maybe (fromMaybe)
+
 -- In this paper we develop a complete implementation of the classic algorithm W
 -- for Hindley-Milner polymorphic type inference in Haskell.
 
 -- Abstract syntax definition for expressions, types and type schemes.
-
 data Exp = EVar String
          | ELit Lit
          | EApp Exp Exp
@@ -189,8 +189,27 @@ test e = do
     Right t  -> putStrLn $ show e ++ " : " ++ show t
 
 -- sample expressions
-e0 :: Exp
-e0 = ELet "id" (EAbs "x" (EVar "x")) (EVar "id")
+exp0 :: Exp
+exp0 = ELet "id" (EAbs "x" (EVar "x")) (EVar "id")
+
+exp1 :: Exp
+exp1 = ELet "id" (EAbs "x" (EVar "x")) (EApp (EVar "id") (EVar "id"))
+
+exp2 :: Exp
+exp2 = ELet "id" (EAbs "x" (ELet "y" (EVar "x") (EVar "y"))) (EApp (EVar "id") (EVar "id"))
+
+exp3 :: Exp
+exp3 = ELet "id" (EAbs "x" (ELet "y" (EVar "x") (EVar "y")))
+                 (EApp (EApp (EVar "id") (EVar "id")) (EVar "x"))
+
+exp4 :: Exp
+exp4 = ELet "id" (EAbs "x" (EApp (EVar "x") (EVar "x")))
+                 (EVar "id")
+
+exp5 :: Exp
+exp5 = EAbs "m" (ELet "y" (EVar "m")
+                (ELet "x" (EApp (EVar "y") (ELit (LBool True)))
+                           (EVar "x")))
 
 -- Pretty-printing functions for the abstract syntax.
 instance Show Type where
